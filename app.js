@@ -1128,7 +1128,8 @@ function mergeBackupData(d) {
   // 先并删除墓碑，再合并数据：已删除的记录不会被带回
   if (d.deletes) saveDeletes(mergeDeletes(loadDeletes(), d.deletes));
   const del = loadDeletes();
-  const list = loadTx();
+  // 本地已有但已被删除（本机删的或云端墓碑传过来的）→ 一并剔除，删除会传播到所有设备
+  const list = loadTx().filter(t => !(t && t.id && del[txDelKey(t.id)]));
   const seen = new Set(list.map(txDedupeKey));
   let added = 0;
   (d.tx || []).forEach(t => {
@@ -1226,7 +1227,8 @@ async function ghApi(path, opts) {
   return fetch('https://api.github.com' + path, {
     method: opts.method || 'GET',
     headers: headers,
-    body: opts.body ? JSON.stringify(opts.body) : undefined
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    cache: 'no-store' // 必须绕开 HTTP 缓存：GET sha 若命中缓存会一直 409
   });
 }
 
@@ -1293,23 +1295,28 @@ async function syncPush(showToast) {
   try {
     const doc = collectCloudDoc();
     const content = b64utf8(JSON.stringify(doc, null, 2));
-    let sha = undefined;
-    const get = await ghApi('/repos/' + cfg.owner + '/' + cfg.repo + '/contents/' + cfg.path);
-    if (get.ok) {
-      const meta = await get.json();
-      sha = meta.sha;
-    } else if (get.status !== 404) {
-      const t = await get.text();
-      throw new Error('push ' + get.status + ' ' + t.slice(0, 100));
-    }
-    const res = await ghApi('/repos/' + cfg.owner + '/' + cfg.repo + '/contents/' + cfg.path, {
-      method: 'PUT',
-      body: {
-        message: 'sync expense data ' + new Date().toISOString(),
-        content: content,
-        sha: sha
+    // PUT 必须带当前 sha；两台设备同时上传会撞车（409），自动取新 sha 重试
+    let res = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let sha = undefined;
+      const get = await ghApi('/repos/' + cfg.owner + '/' + cfg.repo + '/contents/' + cfg.path);
+      if (get.ok) {
+        const meta = await get.json();
+        sha = meta.sha;
+      } else if (get.status !== 404) {
+        const t = await get.text();
+        throw new Error('push ' + get.status + ' ' + t.slice(0, 100));
       }
-    });
+      res = await ghApi('/repos/' + cfg.owner + '/' + cfg.repo + '/contents/' + cfg.path, {
+        method: 'PUT',
+        body: {
+          message: 'sync expense data ' + new Date().toISOString(),
+          content: content,
+          sha: sha
+        }
+      });
+      if (res.ok || res.status !== 409) break;
+    }
     if (!res.ok) {
       const t = await res.text();
       throw new Error('push ' + res.status + ' ' + t.slice(0, 100));

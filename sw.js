@@ -1,5 +1,5 @@
 /* 记账本 PWA Service Worker（只缓存本机资源；跨域请求一律放行不缓存） */
-const CACHE = 'expense-v4';
+const CACHE = 'expense-v5';
 const ASSETS = [
   './',
   'index.html',

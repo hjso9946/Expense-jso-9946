@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#0f1419"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="记账"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+<link rel="icon" type="image/png" sizes="96x96" href="icon-96.png"/>
+<title>记账本</title>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="tabs" id="tabs">
+    <button data-t="list" class="on">明细</button>
+    <button data-t="add">记一笔</button>
+    <button data-t="import">导入</button>
+    <button data-t="queue">待分类</button>
+    <button data-t="stats">统计</button>
+    <button data-t="set">设置</button>
+  </div>
+
+  <!-- ============ 明细 ============ -->
+  <div class="card tab-pane" id="tab-list">
+    <div class="datebar">
+      <input type="month" id="listMonth"/>
+      <button id="btnThisMonth">本月</button>
+    </div>
+    <div class="field">
+      <input type="text" id="listSearch" placeholder="搜索收款方 / 备注…"/>
+    </div>
+    <div class="chips" id="listCatChips" style="margin-bottom:12px"></div>
+    <div class="card" style="margin-bottom:12px">
+      <div id="sumCat" style="font-size:13px"></div>
+      <div class="kcal-big"><span id="sumTotal">0</span><em>元</em></div>
+      <div class="kcal-sub" id="sumSub"></div>
+      <canvas id="catTrendBars" style="height:160px;margin-top:10px"></canvas>
+      <div class="chart-note" id="sumTrendVals"></div>
+      <div class="chart-note" id="sumMom"></div>
+    </div>
+    <div id="listBody"></div>
+  </div>
+
+  <!-- ============ 记一笔（也用于编辑） ============ -->
+  <div class="card tab-pane" id="tab-add" hidden>
+    <h2 id="formTitle">记一笔</h2>
+    <div class="seg" id="dirSeg">
+      <button data-v="out" class="on">支出</button>
+      <button data-v="in">收入</button>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label>金额（元）</label>
+      <input type="number" id="fAmount" step="0.01" placeholder="0.00"/>
+    </div>
+    <div class="field">
+      <label>收款方 / 商家</label>
+      <input type="text" id="fPayee" placeholder="如：美团 / 张三" autocomplete="off"/>
+    </div>
+    <div class="field">
+      <label>商品 / 用途（可选）</label>
+      <input type="text" id="fItem" placeholder="如：午餐"/>
+    </div>
+    <div class="grid g2">
+      <div class="field"><label>日期</label><input type="date" id="fDate"/></div>
+      <div class="field"><label>时间</label><input type="time" id="fTime"/></div>
+    </div>
+    <div class="field">
+      <label>分类</label>
+      <select id="fCat"></select>
+    </div>
+    <div class="field">
+      <label>备注（可选）</label>
+      <input type="text" id="fNote" placeholder="备注"/>
+    </div>
+    <label class="train-row"><input type="checkbox" id="fTrain" checked/> 记住此收款方的分类（下次自动归类）</label>
+    <button class="btn" id="btnSave" style="margin-top:12px">保存</button>
+    <button class="btn ghost" id="btnCancelEdit" style="margin-top:8px" hidden>取消编辑</button>
+  </div>
+
+  <!-- ============ 导入 ============ -->
+  <div class="card tab-pane" id="tab-import" hidden>
+    <h2>导入账单</h2>
+    <div class="drop" id="dropZone">
+      <div class="drop-icon">📄</div>
+      <div>把微信 / 支付宝账单文件拖到这里</div>
+      <div class="chart-note">支持 CSV / XLSX / ZIP / XLS(HTML)，文件不会上传，只在本机解析</div>
+      <button class="btn ghost" id="btnPick" style="margin-top:10px;width:auto;padding:10px 18px">选择文件</button>
+      <input type="file" id="fileInput" accept=".csv,.txt,.zip,.xls,.xlsx" multiple hidden/>
+    </div>
+    <div id="importInfo" class="chart-note" style="margin-top:10px"></div>
+
+    <div id="mapBox" hidden>
+      <h2 style="margin-top:14px">列映射（没认出表头，请手动对应）</h2>
+      <div id="mapPreview"></div>
+      <div id="mapFields"></div>
+      <button class="btn" id="btnMapOk">用这个映射解析</button>
+    </div>
+
+    <div id="previewBox" hidden>
+      <h2 style="margin-top:14px">导入预览（<span id="pvCount">0</span> 笔）</h2>
+      <div class="chart-note" id="pvDupNote"></div>
+      <div id="pvRows"></div>
+      <button class="btn" id="btnCommit" style="margin-top:12px">确认导入</button>
+    </div>
+
+    <button class="btn ghost" id="btnUndoImport" style="margin-top:14px" hidden>撤销上次导入</button>
+    <div class="chart-note">导入方式说明：微信「账单 → 常见问题 → 下载账单」；支付宝「账单 → ⋯ → 下载账单」，发到邮箱后取文件导入。</div>
+  </div>
+
+  <!-- ============ 待分类 ============ -->
+  <div class="card tab-pane" id="tab-queue" hidden>
+    <h2>待分类（<span id="qCount">0</span>）</h2>
+    <div class="chips" style="margin-bottom:12px">
+      <button class="chip" id="btnAcceptAll">接受全部建议</button>
+    </div>
+    <div id="queueBody"></div>
+  </div>
+
+  <!-- ============ 统计 ============ -->
+  <div class="card tab-pane" id="tab-stats" hidden>
+    <div class="datebar">
+      <button id="stPrev">◀</button>
+      <input type="month" id="stMonth"/>
+      <button id="stNext">▶</button>
+    </div>
+    <div class="chips" id="stSrcChips" style="margin:10px 0 4px"></div>
+    <div class="hero">
+      <div class="date" id="stTitle">—</div>
+      <div class="kcal-big"><span id="stTotal">0</span><em>元</em></div>
+      <div class="kcal-sub">预算 <span id="stBudget">—</span> · 日均 <span id="stAvg">—</span></div>
+      <div class="badge" id="stBadge">—</div>
+    </div>
+    <div class="prog"><div class="prog-in" id="stProg"></div></div>
+    <div class="chart-note" id="stProgNote"></div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>每日支出</h2>
+      <canvas id="dayBars"></canvas>
+      <div class="legend"><span><i style="background:#5b9dff"></i>日支出</span><span><i style="background:#8b9bb0"></i>日均预算（虚线）</span></div>
+    </div>
+
+    <div class="card">
+      <h2>分类占比</h2>
+      <canvas id="catPie"></canvas>
+      <div id="catBreak"></div>
+    </div>
+
+    <div class="card">
+      <h2>近 30 天趋势</h2>
+      <canvas id="trendLine"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>近 3 个月</h2>
+      <table>
+        <tr><th>月份</th><th style="text-align:right">支出</th><th style="text-align:right">收入</th><th style="text-align:right">环比</th></tr>
+        <tbody id="momBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ 设置 ============ -->
+  <div class="card tab-pane" id="tab-set" hidden>
+    <h2>预算</h2>
+    <div class="field">
+      <label>默认月预算（元）</label>
+      <input type="number" id="setBudget" step="100" placeholder="3000"/>
+    </div>
+    <div class="field">
+      <label>指定月份预算覆盖（如 2026-11，可选）</label>
+      <div class="grid g2">
+        <input type="month" id="setBudgetMonth"/>
+        <input type="number" id="setBudgetMonthVal" step="100" placeholder="该月预算"/>
+      </div>
+    </div>
+    <button class="btn" id="btnSaveBudget">保存预算</button>
+
+    <h2 style="margin-top:18px">分类管理</h2>
+    <div class="chart-note">内置分类不可删；自定义分类可增删，记账/导入/统计都会用到。</div>
+    <div class="chips" id="catChipsBox" style="margin-top:10px"></div>
+    <div class="grid g2" style="margin-top:10px">
+      <input type="text" id="newCatName" placeholder="新分类名，如：宠物" maxlength="10"/>
+      <button class="btn" id="btnAddCat">添加分类</button>
+    </div>
+
+    <h2 style="margin-top:18px">分类学习</h2>
+    <label class="train-row"><input type="checkbox" id="setTrain" checked/> 纠正分类时自动记住收款方</label>
+    <button class="btn ghost" id="btnReclassify" style="margin-top:10px">重新分类（用最新规则重跑未分类记录）</button>
+
+    <h2 style="margin-top:18px">数据管理</h2>
+    <div class="chart-note">数据存在这台设备的浏览器里，不上传任何服务器（除非在下方开启云同步）。建议定期导出备份。</div>
+    <button class="btn ghost" id="btnExport" style="margin-top:10px">导出备份（JSON）</button>
+    <button class="btn ghost" id="btnImportBackup" style="margin-top:8px">导入备份</button>
+    <input type="file" id="backupInput" accept=".json" hidden/>
+    <button class="btn ghost" id="btnExportUnknown" style="margin-top:8px">导出陌生收款方（给 Claude 批量分类）</button>
+    <button class="btn ghost danger" id="btnClear" style="margin-top:8px">清空全部数据</button>
+
+    <h2 style="margin-top:18px">云端同步（手机/电脑不同网络也能用）</h2>
+    <p class="chart-note" id="syncStatus">未开启 · 数据只存本机</p>
+    <div class="field">
+      <label>GitHub Token（只写 contents，所有设备填同一个）</label>
+      <input type="text" id="syncToken" placeholder="ghp_... 或 github_pat_..."/>
+    </div>
+    <div class="field">
+      <label>仓库（默认已填好：你的私有数据仓库）</label>
+      <input type="text" id="syncRepo" placeholder="hjso9946/Expense-data"/>
+    </div>
+    <button class="btn" id="btnSyncSave">保存并开启同步</button>
+    <div class="grid g2" style="margin-top:10px">
+      <button class="btn ghost" id="btnSyncNow">立即同步</button>
+      <button class="btn ghost" id="btnSyncOff">关闭同步</button>
+    </div>
+    <p class="chart-note">可选功能，不开启就和以前一样纯本地。开启后账目只进你自己的<strong>私有仓库</strong>（别人看不到）；之后手机/电脑/任意网络打开网址都能看、数据自动保持一致——记账后自动上传，打开自动拉取。Token 只存本机，不进备份、不上云。</p>
+
+    <h2 style="margin-top:18px">关于</h2>
+    <div class="chart-note">记账本 v1 · 纯本地 PWA（云同步可选）· 账单解析与分类全部在浏览器内完成<br/>分类引擎：收款方记忆 → 关键词规则 → 金额/时间启发式</div>
+  </div>
+
+  <div class="foot">数据默认仅存本机 · 记账本 Expense Tracker</div>
+</div>
+
+<script src="rules-seed.js?v=20261127j"></script>
+<script src="parse.js?v=20261127j"></script>
+<script src="app.js?v=20261127j"></script>
+</body>
+</html>
